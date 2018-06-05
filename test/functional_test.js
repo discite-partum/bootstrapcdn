@@ -1,3 +1,10 @@
+/* eslint no-undefined: 0*/
+
+const ENV = process.env;
+
+// We use BCDN_HEADERS to distinguish between production and debug CDN headers
+ENV.BCDN_HEADERS = ENV.BCDN_HEADERS || 'production';
+
 const assert = require('assert').strict;
 const path = require('path');
 const semver = require('semver');
@@ -6,7 +13,7 @@ const digest = require('../lib/helpers.js').sri.digest;
 const helpers = require('./test_helpers.js');
 
 const config = helpers.getConfig();
-
+const CDN_URL = 'https://stackpath.bootstrapcdn.com/';
 const responses = {};
 
 // Expects header names to be lowercase in this object.
@@ -17,12 +24,21 @@ const expectedHeaders = {
     'connection': 'Keep-Alive',
     'content-length': '',
     'date': '',
+    'debug': undefined,
     'etag': '',
     'last-modified': '',
     'vary': 'Accept-Encoding',
     'x-cache': '',
-    'x-hello-human': 'Say hello back! @getBootstrapCDN on Twitter'
+    'x-hello-human': 'Say hello back! @getBootstrapCDN on Twitter',
+    'x-hw': undefined
 };
+
+if (ENV.BCDN_HEADERS === 'debug') {
+    expectedHeaders.debug = 'Enabled';
+    // x-cache isn't present when the 'Debug' header is set to 'Enabled'
+    expectedHeaders['x-cache'] = undefined;
+    expectedHeaders['x-hw'] = '';
+}
 
 const compressedExtensions = [
     'css',
@@ -60,7 +76,7 @@ function domainCheck(uri) {
         return uri;
     }
 
-    return uri.replace('https://stackpath.bootstrapcdn.com/', process.env.TEST_S3);
+    return uri.replace(CDN_URL, process.env.TEST_S3);
 }
 
 function request(uri, cb) {
@@ -89,22 +105,27 @@ function assertHeaders(uri) {
     const ext = helpers.getExtension(uri);
 
     Object.keys(expectedHeaders).forEach((header) => {
+        // Ignore header name case as per the specs
         header = header.toLowerCase();
 
         if (typeof process.env.TEST_S3 !== 'undefined' && !s3include.includes(header)) {
             it.skip(`has ${header}`);
         } else {
-            it(`has ${header}`, (done) => {
-                assert.ok(Object.prototype.hasOwnProperty.call(responses[uri].headers, header),
-                    `Expects "${header}" in: ${Object.keys(responses[uri].headers).join(', ')}`);
+            const expected = expectedHeaders[header];
+            const testDescription = typeof expected === 'undefined' ?
+                `does NOT have ${header} present` :
+                `has ${header}${expected === '' ? ' present' : `: ${expected}`}`;
 
-                // Ignore case in checking equality.
-                const actual = responses[uri].headers[header].toLowerCase();
+            it(testDescription, (done) => {
+                const actual = responses[uri].headers[header];
 
-                if (expectedHeaders[header] !== '') {
-                    const expected = expectedHeaders[header].toLowerCase();
-
-                    assert.strictEqual(actual, expected);
+                if (typeof expected === 'undefined') {
+                    assert.strictEqual(actual, expected, `Expects ${header} to NOT be present in the response headers`);
+                } else if (expected === '') {
+                    assert.ok(Object.prototype.hasOwnProperty.call(responses[uri].headers, header),
+                        `Expects "${header}" to be present in the response headers`);
+                } else {
+                    assert.strictEqual(actual, expected, `Expects ${header} to be present in the response headers`);
                 }
                 done();
             });
@@ -148,6 +169,14 @@ describe('functional', () => {
             it('has integrity', (done) => {
                 assertSRI(uri, self.javascriptSri, done);
             });
+
+            afterEach(function() {
+                if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                    const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                    console.error(errStr);
+                }
+            });
         });
 
         if (self.javascriptBundle) {
@@ -163,6 +192,14 @@ describe('functional', () => {
                 it('has integrity', (done) => {
                     assertSRI(uri, self.javascriptBundleSri, done);
                 });
+
+                afterEach(function() {
+                    if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                        const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                        console.error(errStr);
+                    }
+                });
             });
         }
 
@@ -177,6 +214,14 @@ describe('functional', () => {
 
             it('has integrity', (done) => {
                 assertSRI(uri, self.stylesheetSri, done);
+            });
+
+            afterEach(function() {
+                if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                    const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                    console.error(errStr);
+                }
             });
         });
     });
@@ -196,6 +241,14 @@ describe('functional', () => {
 
                 it('has integrity', (done) => {
                     assertSRI(uri, theme.sri, done);
+                });
+
+                afterEach(function() {
+                    if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                        const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                        console.error(errStr);
+                    }
                 });
             });
         });
@@ -217,6 +270,14 @@ describe('functional', () => {
                 it('has integrity', (done) => {
                     assertSRI(uri, theme.sri, done);
                 });
+
+                afterEach(function() {
+                    if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                        const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                        console.error(errStr);
+                    }
+                });
             });
         });
     });
@@ -234,6 +295,14 @@ describe('functional', () => {
 
                 it('has integrity', (done) => {
                     assertSRI(uri, self.javascriptSri, done);
+                });
+
+                afterEach(function() {
+                    if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                        const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                        console.error(errStr);
+                    }
                 });
             });
         });
@@ -253,34 +322,31 @@ describe('functional', () => {
                 it('has integrity', (done) => {
                     assertSRI(uri, self.stylesheetSri, done);
                 });
+
+                afterEach(function() {
+                    if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                        const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                        console.error(errStr);
+                    }
+                });
             });
         });
     });
 
-    describe('public/**/*.*', () => {
-        // Build File List
-        const whitelist = [
-            'bootlint',
-            'bootstrap',
-            'bootswatch',
-            'font-awesome',
-            'twitter-bootstrap',
-            'css',
-            'js'
-        ];
-        const publicURIs = [];
+    describe('cdn/**/*.*', () => {
+        const cdnURIs = [];
 
-        walk.filesSync(path.join(__dirname, '..', 'public'), (base, name) => {
-            let root = base.split(`${path.sep}public${path.sep}`)[1];
+        walk.filesSync(path.join(__dirname, '../cdn'), (base, name) => {
+            let root = base.split(`${path.sep}cdn${path.sep}`)[1];
 
-            // ensure file is in whitelisted directory
-            if (typeof root === 'undefined' || !whitelist.includes(root.split(path.sep)[0])) {
+            if (typeof root === 'undefined') {
                 return;
             }
 
             // replace Windows backslashes with forward ones
             root = root.replace(/\\/g, '/');
-            const domain = domainCheck('https://stackpath.bootstrapcdn.com/');
+            const domain = domainCheck(CDN_URL);
             const uri = `${domain + root}/${name}`;
 
             // ignore twitter-bootstrap versions after 2.3.2
@@ -293,11 +359,11 @@ describe('functional', () => {
                 }
             }
 
-            publicURIs.push(uri);
+            cdnURIs.push(uri);
         });
 
         // Run Tests
-        for (const uri of publicURIs) {
+        for (const uri of cdnURIs) {
             describe(uri, () => {
                 it('it works', (done) => {
                     request(uri, (res) => {
@@ -309,6 +375,14 @@ describe('functional', () => {
 
                 it('has content-type', (done) => {
                     assertContentType(uri, responses[uri].headers['content-type'], done);
+                });
+
+                afterEach(function() {
+                    if (this.currentTest.state === 'failed' && ENV.BCDN_HEADERS === 'debug') {
+                        const errStr = `\n${uri}\nX-HW: ${responses[uri].headers['x-hw']}`;
+
+                        console.error(errStr);
+                    }
                 });
             });
         }
